@@ -1,0 +1,201 @@
+#include <MPU6050_tockn.h>
+#include <Wire.h>
+#include <SoftwareSerial.h>
+
+SoftwareSerial mySerial(6,7);
+MPU6050 mpu6050(Wire);
+
+#define ENA 13
+#define IN1 12
+#define IN2 11
+#define IN3 10
+#define IN4 9
+#define ENB 8
+
+#define pwm 122
+#define trai 2
+#define phai 1
+
+float z =0 ;
+
+void setup() {
+  Serial.begin(9600);
+  mySerial.begin(9600);
+  Wire.begin();
+
+  pinMode(ENA, OUTPUT);
+  pinMode(IN1, OUTPUT);
+  pinMode(IN2, OUTPUT);
+  pinMode(IN3, OUTPUT);
+  pinMode(IN4, OUTPUT);
+  pinMode(ENB, OUTPUT);
+
+  pinMode(A0,INPUT);
+  mpu6050.begin();
+  mpu6050.calcGyroOffsets(true);
+}
+
+void di_thang()
+{
+  analogWrite(IN3, 150);
+  analogWrite(IN2, pwm);
+}
+
+void rephai()
+{
+
+  analogWrite(IN3, 20);
+  analogWrite(IN2, pwm);
+}
+
+void retrai()
+{
+  analogWrite(IN3, 60);
+  analogWrite(IN2, 10);
+}
+
+void dung()
+{
+  digitalWrite(ENB, LOW);
+  digitalWrite(ENA, LOW);
+}
+
+int zone = 0;
+int preadc = 0;
+int adc = 0;
+void Do_line()
+{
+  preadc = adc;
+  adc = analogRead(A0);
+  Serial.println(adc);
+}
+float timer;
+float Kp = 20;
+int pwm2 = pwm;
+int state = 0;
+float z0;
+int re = phai;
+String RxBuffer = "";
+int RxValue = 0;
+
+void WaitESP()
+{
+  while(re == 0)
+    {
+        Serial.println("chua nhan ");
+        mySerial.write(zone);
+        re = mySerial.read();
+        Serial.println(re);
+        if(re == trai)
+        {
+          Serial.println("re trai");
+        }else if (re == phai)
+        {
+          Serial.println("re phai");
+        }else
+        {
+          re = 0;
+        }
+    }
+  state++;
+}
+
+void loop() {
+  /*      State = 0   */
+    if(state == 0)
+    {
+      //WaitESP();
+      state++;
+    }
+    timer = millis();
+    mpu6050.update();
+
+  /*      State = 1   */
+    if(state == 1)
+    {
+      Serial.print("Lấy z0: ");
+      z = mpu6050.getAngleZ();
+      z0 = z;
+      Serial.println(z0);
+      digitalWrite(ENB, LOW);
+      digitalWrite(ENA, LOW);
+      digitalWrite(IN1, LOW); 
+      digitalWrite(IN4, LOW);
+      analogWrite(IN3, 80);
+      analogWrite(IN2, 80);
+      digitalWrite(ENB, HIGH);
+      digitalWrite(ENA, HIGH);
+      delay(300);
+      analogWrite(IN3, 120);
+      analogWrite(IN2, pwm);
+      state ++;
+    }
+    
+    z = mpu6050.getAngleZ();
+    Serial.println(z-z0);
+    if ((z - z0) > 0.1 || (z - z0) < -0.1)
+    {
+      pwm2 = pwm + 20*(float)(z-z0);
+      if(pwm2 > pwm + 15) pwm2 = pwm+15;
+      if(pwm2 < pwm-15) pwm2 = pwm-15;
+    }
+    else
+    {
+      pwm2 = pwm;
+    }
+    Serial.println(pwm2);
+    analogWrite(IN2,pwm2);
+
+    Do_line();
+    if((adc >= 600) && (preadc < 600))
+    {
+      zone++;
+      mySerial.write(zone);
+    }
+    Serial.println(zone);
+    
+    if((zone == 3) && (state == 2))
+    {
+      if(re == phai)
+      {
+        rephai();
+        z0 = z;
+        while(z + 78 > z0)
+        { 
+          mpu6050.update();
+          z = mpu6050.getAngleZ(); //state 2 , vd : z=10;
+          Serial.println(z);
+        }
+       }
+      else if(re == trai)
+      {
+        retrai();
+        z0 = z;
+        while(z - 83 < z0)
+        {
+          mpu6050.update();
+          z = mpu6050.getAngleZ();
+          Serial.println(z);
+        }
+      }
+      dung();
+      delay(500);
+      mpu6050.update();
+      z = mpu6050.getAngleZ();
+      z0 = z;
+      state++;
+      //z0 = z0 + 89.5;
+      analogWrite(IN3, 80);
+      analogWrite(IN2, 80);
+      digitalWrite(ENB, HIGH);
+      digitalWrite(ENA, HIGH);
+      delay(300);
+      analogWrite(IN3, 120);
+      analogWrite(IN2, pwm);
+    }
+    if(state == 3 && zone == 5)
+    {
+      dung();
+      while(1);
+    }
+}
