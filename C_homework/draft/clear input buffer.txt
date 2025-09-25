@@ -1,0 +1,3 @@
+//    printf("\t<Press any key to clear input buffer on keyboard.>\n"); /* Should clear input buffer after use scanf, 
+//																	and if not when use gets, we "ll force problem  */
+//    while (getchar() != '\n'); /* take one bye one character from buffer until get the'\n' character */

@@ -1,0 +1,632 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "HAL.h"
+#include "fatfs.h"
+/*******************************************************************************
+* Static variables
+******************************************************************************/
+static uint8_t *s_filePath;
+static fatfs_BPB_infor_struct s_BPB_info;                    /* Declare static variable to store information of boot sector*/
+static fatfs_entry_list_struct *s_rootDirList = NULL;        /* Declare static variable to store information of root Directory*/
+static fatfs_entry_list_struct *s_subDirList = NULL;         /* Declare static variable to store information of sub directory*/
+static fatfs_data_struct s_fatfsdata;                        /* Declare static variable to store different value relating FAT or roof/sub directory*/
+static fatfs_calculate_struct s_fatfscal;                    /* Declare static variable to store different value relating FAT or roof/sub directory*/
+static fatfs_type_file_folder_struct s_dataDisk;                                  /* Variable of data Disk to format data from fatfs library */
+/*******************************************************************************
+* Add static API prototype in C file inside :
+* Prototypes
+******************************************************************************/
+
+/**
+ * @brief Reading entry of directory - 32bytes/entry
+ * 
+ * @param buff buffer
+ * @param entryNumber ordinal number of entry
+ * @return pointer to point value of buffer
+ */
+static uint8_t *fatfs_readEntryOfDirectory(uint8_t *buffTemp, uint8_t entryNumber);
+
+/**
+ * @brief Adding node of folder in tail of linked list
+ * 
+ * @param headDir Pointer to point head of linked list
+ * @param entryDir entry directory, entry folder (entry_struct)
+ * @return return pointer point head
+ */
+static fatfs_entry_list_struct *fatfs_addTailDirList(fatfs_entry_list_struct *headDir, fatfs_directory_entry_struct entryDir);
+
+/**
+ * @brief Create node of folder in linked list
+ * 
+ * @param entryDir Entry directoryentry folder (entry_struct)
+ * @return Linked list folder
+ */
+static fatfs_entry_list_struct *fatfs_createNodeOfFolder(fatfs_directory_entry_struct entryDir);
+
+/**
+ * @brief Read root directory
+ * 
+ * @param firstCluster First cluster in root directory
+ * @param headDir Double pointers point to head directory
+ * @return true 
+ * @return false 
+ */
+static bool fatfs_readRootOfDirectory(uint32_t firstCluster, fatfs_entry_list_struct **headDir);
+
+/**
+ * @brief Read information of FAT table
+ * 
+ * @param FATTable_info Pointer of FAT information
+ * @return true 
+ * @return false 
+ */
+static bool fatfs_readFATTable(uint8_t **FATTable_info);
+
+/**
+ * @brief Get next cluster in FAT table
+ * 
+ * @param FATTable_info Pointer of FAT information
+ * @param currentCluster Current cluster
+ * @return uint32_t 
+ * @retval next cluster
+ */
+static uint32_t fatfs_getNextCluster(uint8_t *FATTable_info, uint32_t currentCluster);
+
+/**
+ * @brief Check property of entry
+ * 
+ * @param entryDir Variable of entry directory
+ * @param headDir Double pointers point head directory
+ * @return true 
+ * @return false 
+ */
+static bool fatfs_checkPropertyOfEntry(fatfs_directory_entry_struct entryDir, fatfs_entry_list_struct **headDir);
+
+
+
+/************************************************************************************************
+* Code
+************************************************************************************************/
+
+bool fatfs_open(uint8_t *filePath)
+{
+    bool retVal = true;
+    if (kmc_open_img_file(filePath) == false)
+    {
+        retVal = false;
+    }
+    return retVal;
+}
+
+int8_t fatfs_init(fatfs_BPB_infor_struct **BPB_info, fatfs_entry_list_struct **headDir)
+{
+    uint8_t tempBuffer[KMC_BYTE_PER_SEC_IN_RDET];
+    uint8_t retVal = FATFS_CORRECT;
+    uint8_t index;
+    /* Start read Boot Sector */
+    kmc_read_sector(FATFS_BOOT_SECTOR, tempBuffer);
+    for (index = 0x03; index < 0x0B; index++)
+    {
+        s_BPB_info.BS_OEMName[index] = tempBuffer[index];
+    }
+    s_BPB_info.BPB_BytsPerSec = FATFS_CONVERT_TO_16_BIT(tempBuffer[12], tempBuffer[11]);
+    s_BPB_info.BPB_SecPerClus = tempBuffer[13];
+    s_BPB_info.BPB_RsvdSectCnt = FATFS_CONVERT_TO_16_BIT(tempBuffer[15], tempBuffer[14]);
+    s_BPB_info.BPB_NumFATs = tempBuffer[16];
+    s_BPB_info.BPB_RootEntCnt = FATFS_CONVERT_TO_16_BIT(tempBuffer[18], tempBuffer[17]);
+    s_BPB_info.BPB_TotSec16 = FATFS_CONVERT_TO_16_BIT(tempBuffer[20], tempBuffer[19]);
+    s_BPB_info.BPB_FATSz16 = FATFS_CONVERT_TO_16_BIT(tempBuffer[23], tempBuffer[22]);  
+    s_BPB_info.BPB_TotSec32 = FATFS_CONVERT_TO_32_BIT((FATFS_CONVERT_TO_16_BIT(tempBuffer[35], tempBuffer[34])),(FATFS_CONVERT_TO_16_BIT(tempBuffer[33], tempBuffer[32])));
+    s_BPB_info.BS_VolID = FATFS_CONVERT_TO_32_BIT((FATFS_CONVERT_TO_16_BIT(tempBuffer[42], tempBuffer[41])),(FATFS_CONVERT_TO_16_BIT(tempBuffer[40], tempBuffer[39])));
+    s_BPB_info.BPB_FATSz32 = FATFS_CONVERT_TO_32_BIT((FATFS_CONVERT_TO_16_BIT(tempBuffer[39], tempBuffer[38])),(FATFS_CONVERT_TO_16_BIT(tempBuffer[37], tempBuffer[36])));
+    s_BPB_info.BPB_RootClus = FATFS_CONVERT_TO_32_BIT((FATFS_CONVERT_TO_16_BIT(tempBuffer[47], tempBuffer[46])),(FATFS_CONVERT_TO_16_BIT(tempBuffer[45], tempBuffer[34])));
+    s_BPB_info.BS_VolID_32 = FATFS_CONVERT_TO_32_BIT((FATFS_CONVERT_TO_16_BIT(tempBuffer[70], tempBuffer[69])),(FATFS_CONVERT_TO_16_BIT(tempBuffer[68], tempBuffer[67])));
+    *BPB_info = &s_BPB_info;
+    fatfs_dataStruct();
+    fatfs_typeDeter();
+    /* Read FAT table and store in s_FATTable_info*/
+    if (fatfs_readFATTable(&s_fatfsdata.FATTable_info) == true)
+    {
+        if (s_fatfscal.FATType == FAT12)
+        {
+            /* Assign value end of file is 0x0FFF*/
+            s_fatfsdata.endOfFile = (uint32_t)0x0FFFU;
+        }
+        else if (s_fatfscal.FATType == FAT16)
+        {
+            /* Assign value end of file is 0xFFFF*/
+            s_fatfsdata.endOfFile = (uint32_t)0xFFFFU;
+        }
+        else if (s_fatfscal.FATType == FAT32)
+        {
+            /* Assign value end of file is 0x0FFF*/
+            s_fatfsdata.endOfFile = (uint32_t)0x0FFFFFFFU;
+        }
+        else 
+        {
+            retVal = FATFS_ERROR_TYPE;
+        }
+    }
+    else 
+    {
+        retVal = FATFS_ERROR_FAT_TABLE;
+    }
+    fatfs_readRootDirectory(s_fatfscal.StartRootDir, headDir);
+    return retVal
+}
+
+void fatfs_dataStruct(void)
+{
+    /* Start root directory */
+    s_fatfscal.StartRootDir = (uint32_t)s_BPB_info.BPB_RsvdSectCnt + (s_BPB_info.BPB_NumFATs * s_fatfscal.FATSz);
+    /* Determine the count of sector occupied by the Root Directory, 32-byte is size of an entry */
+    s_fatfscal.RootDirSectors = ((uint32_t)(s_BPB_info.BPB_RootEntCnt)*32U + (s_BPB_info.BPB_BytsPerSec - 1U))/(s_BPB_info.BPB_BytsPerSec);
+    if (s_BPB_info.BPB_FATSz16 != 0)
+    {
+        s_fatfscal.FATSz = s_BPB_info.BPB_FATSz16;
+    }
+    else
+    {
+        s_fatfscal.FATSz = s_BPB_info.BPB_FATSz32;
+    }
+    /* Calculate the start of data region with the first sector of cluster 2 */
+    s_fatfscal.FirstDataSector = (uint32_t)s_BPB_info.BPB_RsvdSectCnt + (s_BPB_info.BPB_NumFATs * s_fatfscal.FATSz) + s_fatfscal.RootDirSectors;
+    /* Cluster number N, the sector number of the first sector of that cluster */
+    // s_fatfscal.FirstSectorofCluster = ((clusterNumber - 2U) * s_BPB_info.BPB_SecPerClus) + s_fatfscal.FirstDataSector;
+}
+
+void fatfs_typeDeter(void)
+{
+    if (s_BPB_info.BPB_TotSec16 != 0)
+    {
+        s_fatfscal.TotSec = s_BPB_info.BPB_TotSec16; 
+    }
+    else
+    {
+        s_fatfscal.TotSec = s_BPB_info.BPB_TotSec32;
+    }
+    /* Determine the count of sectors in the data region of the volume */
+    s_fatfscal.DataSec = s_fatfscal.TotSec - (s_BPB_info.BPB_RsvdSectCnt + (s_BPB_info.BPB_NumFATs * s_fatfscal.FATsz) + s_fatfscal.RootDirSectors);
+    /* Determine the count of cluster */
+    s_fatfscal.CountofCluster = s_fatfscal.DataSec / s_BPB_info.BPB_SecPerClus;
+    if (s_fatfscal.CountofCluster < 4085)
+    {
+        /* There is no such thing as a FAT12 volume that has more than 4084 clusters */
+        s_fatfscal.FATType = FAT12;
+        // s_fatfscal.FATOffset = clusterNumber + (clusterNumber/2); /* Multiply by 1.5 without using float point, the divide by 2 round DOWN */
+    }
+    else if (s_fatfscal.CountofCluster < 65525)
+    {
+        /* There is no such thing as a FAT16 volume that less than 4085 clusters or more than 65524 clusters */
+        s_fatfscal.FATType = FAT16;
+        // s_fatfscal.FATOffset = clusterNumber*2;
+        // s_fatfscal.FAT16ClusEntryVal = (uint16_t)(SecBuffer[s_fatfscal.ThisFATEntOffset]);
+    }
+    else
+    {
+        /* There is no such thing as a FAT32 volume that has less than 65525 clusters */
+        s_fatfscal.FATType = FAT32;
+        // s_fatfscal.FATOffset = clusterNumber*4;
+        // s_fatfscal.FAt32ClusEntryVAl = (uint32_t)(SecBuffer[s_fatfscal.ThisFATEntOffset])&0x0FFFFFFF;
+    }
+    /* Sector number of FAT sector that contains the entry for cluster N in the first FAT */
+    // s_fatfscal.ThisFATSecNum = s_BPB_info.BPB_RsvdSectCnt + (s_fatfscal.FATOffset)/(s_BPB_info.BPB_BytsPerSec);
+    // s_fatfscal.ThisFATEntOffset = (s_fatfscal.FATOffset)%(s_BPB_info.BPB_BytsPerSec);
+}
+
+static uint8_t *fatfs_readEntryOfDirectory(uint8_t *buffFolderTemp, uint8_t entryNumber)
+{
+    uint64_t index; /* Declare index */
+    static uint8_t tempBuffer[50] = { 0 }; /* Declare static buffer to store value of buffer in data zone */
+    /* Loop to store 32 byte of entry directory at entryNumber into tempBuffer */
+    for (index = ((uint64_t)entryNumber * 32U); index < ((uint64_t)entryNumber * 32U + 32U); index++)
+    {
+        tempBuffer[index - ((uint64_t)entryNumber * 32U)] = buffFolderTemp[index];
+    }
+    return tempBuffer;
+}
+
+static fatfs_entry_list_struct *fatfs_createNodeOfFolder(fatfs_directory_entry_struct entryDir)
+{
+    /* Allocate memory for pointer temp*/
+    fatfs_entry_list_struct *tempNode = (fatfs_entry_list_struct*)malloc(sizeof(struct entry_list));
+    if (temp != NULL)
+    {
+        tempNode->entry = entryDir;
+        tempNode->next = NULL;
+    }
+    else
+    {
+        exit(1);
+    }
+    return tempNode;
+}
+
+static fatfs_entry_list_struct *fatfs_addTailDirList(fatfs_entry_list_struct *headDir, fatfs_directory_entry_struct entryDir)
+{
+    fatfs_entry_list_struct *temp = NULL;
+    fatfs_entry_list_struct *pNode = NULL;
+    temp = fatfs_createNodeOfFolder(entryDir);
+    if (headDir == NULL)
+    {
+        headDir = temp;
+    }
+    else
+    {
+        pNode = headDir;
+        while (pNode->next != NULL)
+        {
+            pNode = pNode->next;
+        }
+        pNode->next = temp;   /* ??? */
+    }
+    return headDir;
+}
+
+static uint8_t *fatfs_readEntryOfDirectory(uint8_t *buffFolderTemp, uint8_t entryNumber)
+{
+    uint64_t index; /* Declare index */
+    static uint8_t tempBuffer[50] = { 0 }; /* Declare static buffer to store value of buffer in data zone */
+    /* Loop to store 32 byte of entry directory at entryNumber into tempBuffer */
+    for (index = ((uint64_t)entryNumber * 32U); index < ((uint64_t)entryNumber * 32U + 32U); index++)
+    {
+        tempBuffer[index - ((uint64_t)entryNumber * 32U)] = buffFolderTemp[index];
+    }
+    return tempBuffer;
+}
+
+static fatfs_entry_list_struct *fatfs_createNodeOfFolder(fatfs_directory_entry_struct entryDir)
+{
+    /* Allocate memory for pointer temp*/
+    fatfs_entry_list_struct *tempNode = (fatfs_entry_list_struct*)malloc(sizeof(struct entry_list));
+    if (tempNode != NULL)
+    {
+        tempNode->entry = entryDir;
+        tempNode->next = NULL;
+    }
+    else
+    {
+        exit(1); /* Can't allocate memory anymore */
+    }
+    return tempNode;
+}
+
+static fatfs_entry_list_struct *fatfs_addTailDirList(fatfs_entry_list_struct *headDir, fatfs_directory_entry_struct entryDir)
+{
+    fatfs_entry_list_struct *temp = NULL;
+    fatfs_entry_list_struct *pNode = NULL;
+    temp = fatfs_createNodeOfFolder(entryDir);
+    /* If list is empty then create first element in list */
+    if (headDir == NULL)
+    {
+        headDir = temp;
+    }
+    else
+    {
+        pNode = headDir;
+        while (pNode->next != NULL)
+        {
+            pNode = pNode->next;
+        }
+        pNode->next = temp;   
+    }
+    return headDir;
+}
+
+uint32_t fatfs_readFile(const uint32_t firstCluster, uint8_t **bufferFileTemp, fatfs_entry_list_struct *headDir)
+{
+    uint32_t clusterSize = 0U; /* Declare variable size of cluster. In FAT12, size of cluster = size of sector = 512 byte */
+    uint32_t nextCluster = 0U; /* Declare next cluster after checking element of FAT */
+    uint32_t currentCluster = 0U; /* Declare current cluster */
+    uint32_t physicalSector = 0U; /* Declare Physical Sector. In FAT12, it equal sector of Data Area + FATentry - 2 */
+    uint32_t numberOfSector = 0U; /* Declare number of Entry which need to read in multi sector, It mean is sector per cluster */
+    
+    fatfs_entry_list_struct *pNode = NULL; /* Declare temporary pointer is pNode to check all node in linked list */
+    
+    
+    fatfs_entry_list_struct *pNode1 = NULL; /* Declare temporary pointer is pNode1 to check first Cluster */
+    
+    uint8_t entryNumber = 0U; /* Declare variable of entry number in directory entry */
+    uint32_t sizeOfFile = 0U;  /* Declare variable of entry number in directory entry */
+    uint32_t numberOfByte = 0U;
+    /* Check first cluster == first cluster in root Directory?. If have assign pNode for linked list of rootDirectory.
+     *If not assign pNode for linked list of Sub Directory */
+    uint8_t fatType = fatfs_checkTypeFAT(); /* Check FAT Type */
+    //clusterSize = (uint32_t)((uint16_t)s_boot_info.sectorPerCluster * s_boot_info.bytePerSector);
+    /* Assign End of ClusterChain */
+    if (fatType == FAT12)
+    {
+        s_fatfsdata.endOfFile = (uint32_t)0x0FFFU; /* Assign value end of file is 0xFFF*/
+    }
+    else if (fatType == FAT16)
+    {
+        s_fatfsdata.endOfFile = (uint32_t)0xFFFFU; /* Assign value end of file is 0xFFF7*/
+    }
+    else 
+    {
+        s_fatfsdata.endOfFile = (uint64_t)0x0FFFFFFFU; /* Assign value end of file is 0x0FFFFFF7*/
+    }
+
+    pNode = headDir; /* Assign headDir fo pNode*/
+    /* Brow the linked list of Folder and file in roof directory*/
+    while (pNode != NULL)
+    {
+        if ((pNode->entry.attribute == 0x00U || pNode->entry.attribute == 0x20U || pNode->entry.attribute == 0x28U) && (pNode->entry.firstCluster == firstCluster))
+        {
+            /* Assign current cluster by first Cluster of pNode*/
+            currentCluster = firstCluster;
+            nextCluster = currentCluster;
+            /* if nextCluster == 0xFFF it will end of while loop
+             * if nextCluster != 0xFFF it will read multi sector with physical sector which have calculated with number of Entry
+             * and store in bufferFolderTemp
+             */
+            while (nextCluster != s_fatfsdata.endOfFile)
+            {
+                currentCluster = nextCluster; /* Assign the previous nextCluster for current cluster */
+                /* Calculate next cluster follow on FAT table */
+                nextCluster = fatfs_getNextCluster(s_fatfsdata.FATTable_info, currentCluster);
+                /* Count sector to need how many sector which need to read */
+                numberOfSector++;
+            }
+            /* Size of byte in file to allocate for memory */
+            sizeOfFile = numberOfSector * clusterSize;
+            /* Allocate memory for temp buffer*/
+            *bufferFileTemp = (uint8_t*)malloc(sizeOfFile);
+            if (*bufferFileTemp != NULL)
+            {
+                /* Calculate start physical sector*/
+                physicalSector = s_fatfsdata.sectorOfDataArea + (firstCluster - 2U);
+                /* Read multi sector from starting cluster to end of cluster*/
+                numberOfByte = kmc_read_multi_sector(physicalSector, numberOfSector, *bufferFileTemp);
+            }
+        }
+        pNode = pNode->next;
+    }
+    /* Do not free memory pointed by bufferFileTemp because app class need data here to print */
+    return numberOfByte;
+}
+
+
+
+static bool fatfs_readFATTable(uint8_t **FATTable_info)
+{
+    bool retVal = true;
+    /* Assign Size of FAT Table, with FAT12 = 512*9   */
+    uint16_t FATTableSize = (s_BPB_info.BPB_BytsPerSec * s_BPB_info.BPB_FATSz16);
+    /* Declare vairable of index starting of FAT Table*/
+    uint32_t startFATIndex = (uint32_t)s_BPB_info.BPB_RsvdSectCnt;
+
+    *FATTable_info = (uint8_t*)malloc(FATTableSize);
+
+    /* Declare variable to read number of byte in FAT Table and read 9 sector of FAT Table*/
+    int32_t numberOfByte = kmc_read_multi_sector(startFATIndex, s_BPB_info.BPB_FATSz16, *FATTable_info);
+    /* Check if number of Byte equal with calculated number of byte in FAT(512*9)*/
+    if (numberOfByte == (s_BPB_info.BPB_BytsPerSec * s_BPB_info.BPB_FATSz16))
+    {
+        retVal = true;
+    }
+    else
+    {
+        retVal = false;
+    }
+    return retVal;
+}
+
+
+
+
+
+static bool fatfs_readRootDirectory(const uint32_t StartRootDir, fatfs_entry_list_struct **headDir)
+{
+    bool retVal = true;
+    uint8_t entryNumber = 0U; /* Declare variable of entry number in directory entry */
+    uint8_t *bufferFolderTemp = NULL; /* Declare a temp Folder */
+    uint16_t rootDirByteSize = (s_BPB_info.BPB_BytsPerSec * (uint16_t)s_BPB_info.BPB_SecPerClus); /* Calculate size byte of root directory */
+    bufferFolderTemp = (uint8_t*)malloc(rootDirecByteSize); /* Allocate buffer of folder to store information of root Directory */ 
+    fatfs_directory_entry_struct entryDir; /* Declare variable temp of head directory */
+    /* Read multi sector, with sector per cluster is read by root sector */
+    kmc_read_multi_sector(StartRootDir, s_BPB_info.BPB_SecPerClus, bufferFolderTemp);
+    /* Read each entry, with entry is 32 byte, so we have (BytPerClus)/(BytPerEntry) = 512/32 = 16 entries in sector */
+    for (entryNumber = 0U; entryNumber < 16U; entryNumber++)
+    {
+        /* Copy all byte in 1 entry number N (0 - 15) into buffer entryDir.FATDirecStruct */
+        memcpy(entryDir.FATDirecStruct, fatfs_readEntryOfDirectory(bufferFolderTemp, entryNumber), 32U);
+        /* Check properties of entries*/
+        retVal = fatfs_checkPropertyOfEntry(entryDir, headDir);
+    }
+    /* Assign pointer head for static variable pointer of root Directory*/
+    s_rootDirList = *headDir;
+    free(bufferFolderTemp);
+    return retVal;
+}
+
+
+
+
+static bool fatfs_checkPropertyOfEntry(fatfs_directory_entry_struct entryDir, fatfs_entry_list_struct **headDir)
+{
+    /* File name, a.k.a short file name */
+    bool retVal = true;
+    /* Assign value of byte at position 11 (0x0B) for attributes*/
+    entryDir.DIR_Attribute = entryDir.FATDirecStruct[11];
+    /* Check entry is long file name */
+    if (entryDir.DIR_Attribute == 0x0FU)
+    {
+        retVal = false; /* Dectect long file name */
+    }
+    else
+    {
+        /* Check entry is short file name with attriibutes is 0x01, 0x20. */
+        if ((entryDir.DIR_Attribute == 0x01U) || (entryDir.DIR_Attribute == 0x20U))
+        {
+            memset(entryDir.DIR_FileName, 0U, sizeof(entryDir.DIR_FileName)); /* Clear old name */
+            memcpy(entryDir.DIR_FileName, entryDir.FATDirecStruct, 8U); /* Coppy 8 first byte into file name, short file name is a 8 first byte */
+            /* Check first byte of file name, if it is a 0x00 it mean empty entry or 0xE5 it mean file/subdirectory has been deleted */
+            if (entryDir.DIR_FileName[0] == 0x00U || entryDir.DIR_FileName[0] == 0xE5U)
+            {
+                retVal = false;
+            }
+            /* Copy 3 next byte in to extension*/
+            memset(entryDir.DIR_Extension, 0U, sizeof(entryDir.DIR_Extension));
+            memcpy(entryDir.DIR_Extension, entryDir.FATDirecStruct + 8, 3U);
+        }
+        /* Check entry is folder type*/
+        else if (entryDir.DIR_Attribute = 0x10U)
+        {
+            memset(entryDir.DIR_FileName, 0, sizeof(entryDir.DIR_FileName));
+            memcpy(entryDir.DIR_FileName, entryDir.FATDirecStruct, 11U);
+            /* If folder have dot extension, it means wrong folder because folder never have dot extension*/
+            if (entryDir.DIR_FileName[0] == 0x2EU)
+            {
+                retVal = false; /* Dot entry: '.' or '..' */
+            }
+        }
+        /* Convert byte last modified time 16 bit */
+        entryDir.DIR_FstClusHI = FATFS_CONVERT_TO_16_BIT(entryDir.entryDirectory[21], entryDir.entryDirectory[20]);
+        entryDir.DIR_WrtTime = FATFS_CONVERT_TO_16_BIT(entryDir.entryDirectory[23], entryDir.entryDirectory[22]);
+        entryDir.DIR_WrtDate = FATFS_CONVERT_TO_16_BIT(entryDir.entryDirectory[25], entryDir.entryDirectory[24]);
+        entryDir.DIR_FstClusLO = FATFS_CONVERT_TO_16_BIT(entryDir.entryDirectory[27], entryDir.entryDirectory[26]);
+        entryDir.DIR_FileSize = FATFS_CONVERT_TO_32_BIT((FATFS_CONVERT_TO_16_BIT(entryDir.entryDirectory[31], entryDir.entryDirectory[30])), (FATFS_CONVERT_TO_16_BIT(entryDir.entryDirectory[29], entryDir.entryDirectory[28])));
+        *headDir = fatfs_addTailDirList(*headDir, entryDir); /* Add this data into last element of linked list*/
+    }
+    return retVal;
+}
+
+static uint32_t fatfs_getNextCluster(uint8_t* const FATTable_info, const uint32_t currentCluster)
+{
+    /* Declare a variable return next value index of current cluster*/
+    uint32_t retval = 0U;
+    /* Position of element in FAT corresponding with cluster in Data area*/
+    uint32_t FATOffset = 0U;
+
+    /* Checking this is a FAT 12 type or FAT16 or FAT32*/
+    if (s_fatType == FAT12)
+    {
+        /* Find position in FAT equal with current cluster, because each element is 1.5 byte in FAT*/
+        FATOffset = (currentCluster * 3U) / 2U;
+        /* If current Clust is odd number, it will change */
+        if (currentCluster % 2U != 0)
+        {
+            retval = (uint32_t)(FATFS_CONVERT_TO_16_BIT(FATTable_info[FATOffset + 1U], FATTable_info[FATOffset]) >> 4U);
+        }
+        /* If current Clust is even number, it will change */
+        else
+        {
+            retval = (uint32_t)(FATFS_CONVERT_TO_16_BIT(FATTable_info[FATOffset + 1U], FATTable_info[FATOffset]) & 0x0FFF);
+        }
+    }
+    else if (s_fatType == FAT16)
+    {
+        /* do nothing */
+    }
+    else if (s_fatType == FAT16)
+    {
+        /* do nothing */
+    }
+    else
+    {
+        retVal = -1; /* Wrong formatted */
+    }
+    return retval;
+}
+
+
+bool fatfs_readDirectory(const uint32_t firstCluster, fatfs_entry_list_struct** headDir)
+{
+    /* Declare variable size of cluster. In FAT12, size of cluster = size of sector = 512 byte */
+    uint32_t clusterSize = (uint32_t)((uint16_t)s_boot_info.sectorPerCluster * s_boot_info.bytePerSector);
+    uint32_t nextCluster = 0U;                                      /* Declare next cluster after checking element of FAT */
+    uint32_t currentCluster = firstCluster;                         /* Declare current cluster */
+    uint8_t* bufferFolderTemp =NULL;                                /* Initialize buffer to store byte of entry sub directory */
+    uint32_t physicalSector = 0U;                                   /* Declare Physical Sector, in FAT12 = sector of Data Area + FATentry - 2 */
+    uint32_t numberOfSector = 1U;                                   /* Declare number of Entry which need to read in multi sector, It mean is sector per cluster*/
+    fatfs_entry_list_struct* pNode = NULL;                          /* Declare temporary pointer is pNode to check all node in linked list */
+    fatfs_entry_list_struct* pNode1 = NULL;                         /* Declare temporary pointer is pNode1 to check first Cluster */
+    fatfs_entry_struct entryDir;                                    /* Declare variable to store value of entry */
+    uint8_t entryNumber = 0U;                                       /* Declare variable of entry number in directory entry */
+    bool retVal = true;
+
+    /* To delete if *head point into memory have data*/
+    if (*headDir != NULL)
+    {
+        free(*headDir);
+        *headDir = NULL;
+    }
+    /* if user select option in application, it will select with first is read directory and print, second is read subdirectory */
+    pNode1 = s_rootDirList;
+    while (pNode1 != NULL)
+    {
+        if (firstCluster == pNode1->entry.firstCluster)
+        {
+            pNode = s_rootDirList;
+            break;
+        }
+        else
+        {
+            pNode = s_subDirList;
+        }
+        pNode1 = pNode1->next;
+    }
+    /* Initialize buffer to store cluster in Data area corresponding with fat element */
+    bufferFolderTemp = (uint8_t*)malloc(clusterSize);
+    if (bufferFolderTemp != NULL && pNode !=NULL)
+    {
+        /* Brow the linked list of Folder and file in roof directory */
+        while (pNode != NULL)
+        {
+            /* check this node is folder and first cluster in linked list == wanting first cluster? */
+            if ((pNode->entry.attribute == 0x10U) && (pNode->entry.firstCluster == firstCluster))
+            {
+                nextCluster = currentCluster; /* Assign current cluster by first Cluster of pNode */
+                /* if nextCluster == 0xFFF it will end of while loop
+                 * if nextCluster != 0xFFF it will read multi sector with physical sector which have been calculated with number of Entry
+                 * and store in bufferFolderTemp 
+                 */
+                while (nextCluster != s_fatfsdata.endOfFile)
+                {
+                    /* Assign the previous nextCluster for current cluster */
+                    currentCluster = nextCluster;
+                    /* Calculate value of physical sector follow the previous nexcluster*/
+                    physicalSector = s_fatfsdata.sectorOfDataArea + (currentCluster - 2U);
+                    /* Read sector at physical sector*/
+                    kmc_read_multi_sector(physicalSector, numberOfSector, bufferFolderTemp);
+                    /* Calculate next cluster follow on FAT table*/
+                    nextCluster = fatfs_getNextCluster(s_fatfsdata.FATTable_info, currentCluster);
+                    /* Count sector to need how many sector which need to read*/
+                    numberOfSector++;
+                }
+                /* Read each entry, with entry is 32 byte, so we have 16 total entry in sector */
+                for (entryNumber = 0U; entryNumber < 16U; entryNumber++)
+                {
+                    /* Copy all byte in 1 entry into buffer entryDir.entryDirectory */
+                    memcpy(entryDir.entryDirectory, fatfs_readEntryOfDirectory(bufferFolderTemp, entryNumber), 32U);
+                    /* Store all properties of entry in linked list */
+                    retVal = fatfs_checkPropertyOfEntry(entryDir, headDir);
+                }
+            }
+            pNode = pNode->next;
+        }
+        retVal = true;
+        free(bufferFolderTemp);
+    }
+    else
+    {
+        retVal = false;
+    }
+    /* Assign head Dir for pointer of Sub Directory*/
+    s_subDirList = *headDir;
+
+    return retVal;
+}
+
+void fatfs_close(void)
+{
+    /*Free linked list of FAT Table */
+    free(s_fatfsdata.FATTable_info);
+    /* Free linked list of root Directory */
+    free(s_rootDirList);
+    /* Free linked list of Sub Directory */
+    free(s_subDirList);
+    kmc_close_img_file();
+}

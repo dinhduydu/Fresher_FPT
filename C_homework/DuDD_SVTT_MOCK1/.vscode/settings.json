@@ -1,0 +1,7 @@
+{
+    "C_Cpp.errorSquiggles": "Disabled",
+    "files.associations": {
+        "app.h": "c",
+        "ctype.h": "c"
+    }
+}

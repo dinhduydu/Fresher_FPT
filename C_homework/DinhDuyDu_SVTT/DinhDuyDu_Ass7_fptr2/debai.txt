@@ -1,0 +1,39 @@
+Assignment 2 
+
+Viết chương trình cho phép người dùng nhập vào account từ bàn phím. Sử dụng mảng char arr[20] để lưu trữ account.
+
+Check lỗi account:  
+
+Nếu account >10 ký tự (LENGHT_INVALID) 
+Nếu nhập account có ký tự khác chữ và số(CHAR_INVALID). 
+Lib.c sẽ gọi đến function tầng application để thông báo lỗi thông qua function pointer. 
+
+Sử dụng enum để define các mã lỗi. 
+
+typedef enum _statetype 
+
+{ 
+
+    CORRECT, 
+
+    CHAR_INVALID, 
+
+    LENGHT_INVALID 
+
+}status_enum_t; 
+
+Viết thư viện lib.c, có các api: 
+
+void RegisterCallback(func func_add);  
+
+void Check_Account(char* ptr, uint8_t lenght); 
+
+
+
+Api RegisterCallback cho phép ứng dụng đăng ký function. . 
+
+Check_Account kiểm tra chuỗi người dùng vừa nhập. 
+
+Function của người dùng được gọi thông qua function pointer phải có các tham số về mã lỗi. 
+
+Người dùng được phép nhập nhiều lần. 

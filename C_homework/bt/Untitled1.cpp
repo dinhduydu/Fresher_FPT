@@ -1,0 +1,20 @@
+#include <stdio.h>
+
+typdef void (*StoreFn)(char *str);
+
+void download(StoreFn fn)
+{
+	printf("Pretend downloading....\n");
+	fn("awesome!!!");
+}
+
+void store(char*str)
+{
+	printf("Store: %s\n",str);
+}
+
+int main ()
+{
+	dowload(store);
+	return 0;
+}

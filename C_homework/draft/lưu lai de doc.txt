@@ -1,0 +1,23 @@
+Mình năm nay 27 gần 28 đang đi làm được mấy năm. Giờ đang thời gian cách ly nên muốn học thêm gì đó.
+Do lúc trước cũng đam mê tinh học nhưng thích nghành học hiện tại hơn nên không theo học IT.
+Giờ muốn học lại từ đầu thì học gì?
+Muốn học về OS và real-time OS thì học gì trước. Lập trình nhúng và ứng dụng trong công nhiệp thì Định hướng ra sao ai biết chỉ mình?
+Mình không biết gì về lập trình hết nhưng toán thì ok?
+RTOS là cả một công trình đó mike (tyson) friend ạ.
+Muốn chơi với lập trình nhúng đầu tiên phải biết về điện tử.
+Phần điện tử phải biết
+5 linh kiện cơ bản : điện trở, tụ điện, đi-ốt, transistor
+4 cổng logic : AND, OR, XOR, NOT
+Phần lập trình phải biết
+Lập trình Assembly
+Lập trình C
+Lập trình C++
+Cách hoạt động của trình biên dịch (GCC, IAR, KeilC,...)
+Static analisis
+Safety code
+Để làm được sản phẩm bạn phải biết
+Vẽ mạch ---> đặt mạch in
+Mua linh kiện
+Hàn
+Đóng gói
+Nói chung là bạn cần tối thiểu 10 năm để trở thành chuyên gia

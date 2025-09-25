@@ -1,0 +1,52 @@
+Hi lớp !
+
+Mình gửi bài tập pointer nâng cao.
+
+Assignment 1 
+
+Tìm và sửa các cú pháp gây ra lỗi “Segmentation Faul” trong chương trình 
+
+            Yêu cầu: 
+
+Không thay đổi số lượng dòng lệnh, không thay đổi kiểu dữ liệu của các biến, không có compiler warnings 
+Không thay đổi cú pháp các dòng lệnh in ra màn hình: 
+
+printf("s is %s\n",(char *)s); 
+
+printf("s[0] is %c\n", *c); 
+Đoạn chương trình có output như sau: 
+ 
+
+s is Hello World 
+
+s[0] is H 
+
+
+
+#include <stdio.h> 
+
+int main() 
+
+{ 
+
+    char * c; 
+
+    char ** s; 
+
+    char foo[] = "Hello World"; 
+
+
+
+    *s = foo; 
+
+    printf("s is %s\n",(char *)s); 
+
+    c = s[0];
+
+    printf("s[0] is %c\n", *c); 
+
+
+
+    return(0); 
+
+} 

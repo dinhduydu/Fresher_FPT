@@ -1,0 +1,80 @@
+// void fatread (void)     
+// {
+//     /* Read FAT table and store in s_FATTable_info*/
+//     if (fatfs_readFATTable(&s_fatfsdata.FATTable_info) == true)
+//     {
+//         /* Assign value end of file is 0xfff*/
+//         s_fatfsdata.endOfFile = (uint32_t)0x0FFFU;
+//     }
+//     /* determined value sector of Root Directory*/
+//     s_fatfsdata.sectorOfRootDir = (uint32_t)(s_boot_info.numberOfReservedSector + s_boot_info.sectorPerFat * (uint8_t)s_boot_info.numberOfFat);
+//     /* determined value sector of Data Area*/
+//     s_fatfsdata.sectorOfDataArea = (uint32_t)(s_boot_info.numberOfReservedSector + (s_boot_info.sectorPerFat * (uint8_t)s_boot_info.numberOfFat) + (s_boot_info.maximumRootDirEntry / 16U));
+//     fatfs_readRootDirectory(s_fatfsdata.sectorOfRootDir, headDir);
+// }    
+
+// uint8_t fatfs_FATentry (uint32_t N)
+// {
+//     /* N means entry of Cluster N th */
+
+//     return ?;
+// }
+
+// uint32_t fatfs_direcEnt()
+// {
+//     /* Declare variable of hour, minute, year, month, day */
+//     uint8_t hour = 0U;
+//     uint8_t minute = 0U;
+//     uint16_t year = 0U;
+//     uint8_t month = 0U;
+//     uint8_t day = 0U;
+//     /* Format Data Time */
+//     hour = (uint8_t)(entryDir->lastModifTime >> 11U);
+//     minute = (uint8_t)((entryDir->lastModifTime >> 5U) & 0x3FU);
+//     year = (entryDir->lastModifDate >> 9U) + 1980U;
+//     month = (uint8_t)((entryDir->lastModifDate >> 5U) & 0x0FU);
+//     day = (uint8_t)(entryDir->lastModifDate & 0x1FU);
+// }
+
+// uint32_t fat_checkIndex ( uint64_t N)
+// {
+//     uint8_t FATtype = fatfs_checkTypeFAT(void);
+//     uint8_t SecBuff[8];
+//     if (FATtype = FAT16)
+//     {
+//         s_fatfscal.FATOffset = N*2U;
+//     }
+//     else if (FATtype = FAt32)
+//     {
+//         s_fatfscal.FATOffset = N*4U;
+//     }
+//     if (FATtype = FAT12)
+//     {
+//         s_fatfscal.FATOffset = N + N/2;
+//     }
+//     else if (FATtype = FAT16)
+//     {
+//         s_fatfscal.FAT16ClusEntryVal = *((WORD*) &SecBuff[s_fatfscal.ThisFATEntOffset]);
+//     }
+//     else if (FATtype = FAT32)
+//     {
+//         s_fatfscal.FAt32ClusEntryVAl = (*((DWORD*) &SecBuff[s_fatfscal.ThisFATEntOffset]))&0x0FFFFFFF;
+//     }
+    
+// }
+
+
+uint32_t fatfs_firstsectorofcluster (uint64_t N)
+{
+    /*Given any valid data cluster number N, the sector number of the first sector of that cluster 
+    (again relative to sector 0 of the FAT volume) is computed as follows:*/
+
+    s_fatfscal.FirstSectorofCluster = ((N - 2U) * s_BPB_info.BPB_SecPerClus) + s_fatfscal.FirstDataSector;
+    return s_fatfscal.FirstSectorofCluster;
+
+
+
+
+    /* Determined value sector of Data Area */
+    s_fatfsdata.sectorOfDataArea = (uint32_t)(s_boot_info.rsvdSectCnt + (s_boot_info.sectorPerFAT * (uint8_t)s_boot_info.numberOfFAT) + s_fatfsdata.sectorOfRootDir);
+}
